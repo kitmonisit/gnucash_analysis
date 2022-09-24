@@ -26,6 +26,7 @@ account_types = {
     gnucash.ACCT_TYPE_TRADING: "Trading",
 }
 
+
 def all_accounts(root):
     """Get all gnucash Accounts,
 
@@ -45,6 +46,7 @@ def all_accounts(root):
             accounts.append(subaccount)
 
     return accounts
+
 
 def splits_dataframe(gnc_file):
     """Get GnuCash splits as Pandas DataFrame.
@@ -67,20 +69,35 @@ def splits_dataframe(gnc_file):
 
         for account in accounts:
             name = account.name
+            currency = account.GetCommodity().get_mnemonic()
             typ = account_types[account.GetType()]
 
             for split in account.GetSplitList():
                 transaction = split.GetParent()
                 date = transaction.GetDate()
                 description = transaction.GetDescription()
+                split_memo = split.GetMemo()
                 amount = split.GetAmount().to_double()
-                splits.append((name, typ, date, description, amount))
+                splits.append(
+                    (name, typ, currency, date, description, split_memo, amount)
+                )
 
-        return pd.DataFrame(splits, columns=['account', 'type', 'date',
-                                             'description', 'amount'])
+        return pd.DataFrame(
+            splits,
+            columns=[
+                "account",
+                "type",
+                "currency",
+                "date",
+                "description",
+                "split_memo",
+                "amount",
+            ],
+        )
     finally:
         session.end()
         session.destroy()
+
 
 def daily(df, account_type):
     """DataFrame of daily totals in each account.
@@ -93,11 +110,17 @@ def daily(df, account_type):
         DataFrame indexed by date, with a column for each account. Each value
         is the transaction total for that account that day.
     """
-    df = df[df['type'] == account_type]
-    df = pd.pivot_table(df, index=pd.DatetimeIndex(df['date']),
-                        columns='account', values='amount', aggfunc=np.sum)
-    df = df.resample('D').sum()
+    df = df[df["type"] == account_type]
+    df = pd.pivot_table(
+        df,
+        index=pd.DatetimeIndex(df["date"]),
+        columns="account",
+        values="amount",
+        aggfunc=np.sum,
+    )
+    df = df.resample("D").sum()
     return df
+
 
 def balances_dataframe(gnc_file, start, end):
     """Get GnuCash daily account balances as Pandas DataFrame.
@@ -133,23 +156,28 @@ def balances_dataframe(gnc_file, start, end):
         for account in accounts:
             # TODO(prattmic): Full name in splits_dataframe
             name = account.get_full_name()
+            currency = account.GetCommodity().get_mnemonic()
             typ = account_types[account.GetType()]
 
             for date in dates:
                 t = time.mktime(date.timetuple())
                 # Third argument is whether to include child accounts.
-                balance = account.GetBalanceAsOfDateInCurrency(t, usd, False).to_double()
-                balances.append((name, typ, date, balance))
+                balance = account.GetBalanceAsOfDateInCurrency(
+                    t, usd, False
+                ).to_double()
+                balances.append((name, typ, currency, date, balance))
 
-        return pd.DataFrame(balances, columns=['account', 'type', 'date',
-                                               'balance'])
+        return pd.DataFrame(
+            balances, columns=["account", "type", "currency", "date", "balance"]
+        )
     finally:
         session.end()
         session.destroy()
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='GNUCash expense moving average')
-    parser.add_argument('file', type=str, help='GNUCash file')
+    parser = argparse.ArgumentParser(description="GNUCash expense moving average")
+    parser.add_argument("file", type=str, help="GNUCash file")
 
     args = parser.parse_args()
 
